@@ -33,15 +33,25 @@ parser.add_argument('-p','--suppress',help="Suppress most connection related err
 
 args = parser.parse_args()
 
-STATUS_CODE = 0
-ERRORS = []
+STATE_OK=0
+STATE_WARNING=1
+STATE_CRITICAL=2
+STATE_UNKNOWN=3
+STATE_DEPENDENT=4
+
+state = STATE_UNKNOWN
 
 def async():
     process = subprocess.Popen(["swift-recon", "--async"], stdout=subprocess.PIPE)
     for line in process.stdout.readlines():
         if line.find("Failed: 0.0%") != -1:
             print line
-            sys.exit(0)
+            sys.exit(STATE_OK)
+        else:
+            sys.exit(STATE_CRITICAL)
+            print line
+     
+
 
 def replication():
     process = subprocess.Popen(["swift-recon", "--replication"], stdout=subprocess.PIPE)
