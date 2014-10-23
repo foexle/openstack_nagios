@@ -26,54 +26,61 @@ __author__ = "Heiko Kraemer"
 
 parser = argparse.ArgumentParser(description="This is a Nagios check script for Swift recon")
 
-parser.add_argument('-s','--stype',help="Stats type\n [async|replication|auditor|updater|expirer|load|quarantine|md5]", required=True) 
-parser.add_argument('-u','--umounted',help="Check cluster for unmounted devices", required=False)
-parser.add_argument('-d','--disc-usage',help="Get disk usage stats", required=False)
-parser.add_argument('-p','--suppress',help="Suppress most connection related errors", required=False)
+parser.add_argument('-s','--stype',help="Stats type\n [async|replication|auditor|updater|expirer|quarantine|md5]", required=True) 
 
 args = parser.parse_args()
 
 STATE_OK=0
 STATE_WARNING=1
 STATE_CRITICAL=2
-STATE_UNKNOWN=3
-STATE_DEPENDENT=4
+STATE_UNKNOWN=4
 
 state = STATE_UNKNOWN
 
+def validate_output(rcon_output):
+    for line in rcon_output:
+        if line.find("Failed:") != -1:
+            if line.find("Failed: 0.0%") != -1:
+                print line
+            else:
+                print line
+                sys.exit(STATE_CRITICAL)
+
+
 def async():
     process = subprocess.Popen(["swift-recon", "--async"], stdout=subprocess.PIPE)
-    for line in process.stdout.readlines():
-        if line.find("Failed: 0.0%") != -1:
-            print line
-            sys.exit(STATE_OK)
-        else:
-            sys.exit(STATE_CRITICAL)
-            print line
-     
-
+    validate_output(process.stdout.readlines())
 
 def replication():
     process = subprocess.Popen(["swift-recon", "--replication"], stdout=subprocess.PIPE)
+    validate_output(process.stdout.readlines())
 
 def auditor():
     process = subprocess.Popen(["swift-recon", "--auditor"], stdout=subprocess.PIPE)
+    validate_output(process.stdout.readlines())
 
 def updater():
     process = subprocess.Popen(["swift-recon", "--updater"], stdout=subprocess.PIPE)
+    validate_output(process.stdout.readlines())
 
 def expirer():
     process = subprocess.Popen(["swift-recon", "--expirer"], stdout=subprocess.PIPE)
-
-def load():
-    process = subprocess.Popen(["swift-recon", "--loadstats"], stdout=subprocess.PIPE)
+    validate_output(process.stdout.readlines())
 
 def quarantine():
     process = subprocess.Popen(["swift-recon", "--quarantine"], stdout=subprocess.PIPE)
+    validate_output(process.stdout.readlines())
 
 def md5():
     process = subprocess.Popen(["swift-recon", "--md5"], stdout=subprocess.PIPE)
-
+    for line in process.stdout.readlines():
+        if line.find("error") != -1:
+            if line.find("0 error") != -1:
+                print line
+                sys.exit(STATE_OK)
+            else:
+                print line
+                sys.exit(STATE_CRITICAL)
 
 
 option_types =  {   "async" : async,
@@ -81,7 +88,6 @@ option_types =  {   "async" : async,
                     "auditor" : auditor,
                     "updater" : updater,
                     "expirer" : expirer,
-                    "load" : load,
                     "quarantine" : quarantine,
                     "md5" : md5,
                 }
