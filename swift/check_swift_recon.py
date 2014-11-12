@@ -38,13 +38,17 @@ STATE_UNKNOWN=4
 state = STATE_UNKNOWN
 
 def validate_output(rcon_output):
-    for line in rcon_output:
-        if line.find("Failed:") != -1:
-            if line.find("Failed: 0.0%") != -1:
-                print line
-            else:
+    try:
+        for line in rcon_output:
+            if line.find("Failed:") != -1:
+                if line.find("Failed: 0.0%") != -1:
+                    print line
+             else:
                 print line
                 sys.exit(STATE_CRITICAL)
+    except:
+        print "Unexpected error:", sys.exc_info()[0]
+        sys.exit(STATE_CRITICAL)
 
 
 def async():
