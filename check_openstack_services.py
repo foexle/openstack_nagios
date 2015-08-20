@@ -17,17 +17,16 @@
 # limitations under the License.
 #
 
-import argparse
 import os.path
 import sys
+import logging
+
 
 from oslo.config import cfg
 from sqlalchemy import *
 from logging.handlers import SysLogHandler
 
-from keystoneclient.auth.identity import v2
-from keystoneclient import session
-
+from keystoneclient.v2_0 import client as k_client
 
 
 LOG = logging.getLogger('openstack_service_checker')
@@ -35,24 +34,21 @@ LOG_FORMAT='%(asctime)s %(name)-12s %(levelname)-8s %(message)s'
 LOG_DATE = '%m-%d %H:%M'
 DESCRIPTION="OpenStack Service Checker"
 CONF = cfg.CONF
-AUTH = ""
+CREDENTIALS = {}
 
 
 def parse_args():
 
-        # Keystone and Database configurations will be parse with the neutron.conf file
-
-    ap = argparse.ArgumentParser(description=DESCRIPTION)
-    ap.add_argument('-d', '--debug', action='store_true',
-                    default=False, help='Show debugging output')
-    ap.add_argument('--service', action='store_true',
-                    default="nova", help='Choose service ["nova","cinder","neutron"]', required=True)
-    return ap.parse_args()
+    cli_ops = [
+            cfg.StrOpt('service', default="nova", help='Choose service ["nova","cinder","neutron"]', required=True),
+            cfg.BoolOpt('debug', default=False, help="Show debugging output")
+            ]
+    CONF.register_cli_opts(cli_ops)
 
 
-def setup_logging(args):
+def setup_logging():
     level = logging.INFO
-    if args.debug:
+    if CONF.debug:
         level = logging.DEBUG
     logging.basicConfig(level=level, format=LOG_FORMAT, date_fmt=LOG_DATE)
     handler = SysLogHandler(address = '/dev/log')
@@ -60,26 +56,30 @@ def setup_logging(args):
     handler.setFormatter(syslog_formatter)
     LOG.addHandler(handler)
 
-def check_service(args, client):
-    
 
-def get_auth(arg_service):
+def get_auth():
     keystone_grp = cfg.OptGroup(name='keystone_authtoken', title='Keystone options')
     CONF.register_group(keystone_grp)
     keystone_opts = [ cfg.StrOpt('auth_uri', default=''), 
                       cfg.StrOpt('admin_tenant_name'),
                       cfg.StrOpt('admin_user'),
-                      cfg:StrOpt('admin_password')]
+                      cfg.StrOpt('admin_password'),
+                      cfg.StrOpt('admin_tenant_id')]
     CONF.register_opts(keystone_opts, keystone_grp)
-    config_files = ["/etc/{service}/{service}.conf".format(service=arg_service)]
+    config_files = ["/etc/{service}/{service}.conf".format(service=CONF.service)]
     # Config files must be in an array
     if os.path.isfile(config_files[0]):
         CONF(default_config_files=config_files)
-        key_auth = v2.Password( auth_url=CONF.keystone_authtoken.auth_uri, 
-                                username=CONF.keystone_authtoken.admin_user,
-                                password=CONF.keystone_authtoken.admin_password,
-                                tenant_name=CONF.keystone_authtoken.admin_tenant_name)
-        AUTH = session.Session(auth=key_auth)
+        
+        CREDENTIALS['auth_url'] = CONF.keystone_authtoken.auth_uri
+        CREDENTIALS['username'] = CONF.keystone_authtoken.admin_user
+        CREDENTIALS['password'] = CONF.keystone_authtoken.admin_password
+        CREDENTIALS['tenant_name'] = CONF.keystone_authtoken.admin_tenant_name
+        
+        keystone = k_client.Client(**CREDENTIALS)
+        for tenant in keystone.tenants.list():
+            if tenant.name == CONF.keystone_authtoken.admin_tenant_name:
+                CONF.keystone_authtoken.admin_tenant_id = tenant.id
     else:
         print "Config File not found"
         sys.exit(2)
@@ -88,43 +88,52 @@ def get_auth(arg_service):
 # Clients objects
 def check_nova_services():
     from novaclient import client
-    nova = client.Client("1.1", session=AUTH)
-    print nova.service.list()
+    nova = client.Client("2", CREDENTIALS['username'],
+                              CREDENTIALS['password'],
+                              CREDENTIALS['tenant_name'],
+                              CREDENTIALS['auth_url'])
 
 
-def get_neutron_client():
+    for service in nova.services.list():
+        if service.state != "up" and service.status == "enabled":
+            print "Server not runnning: {service} on host {host}".format(service=service.binary,host=service.host)
+            sys.exit(2)
+
+    
+def check_neutron_services():
     from neutronclient.neutron import client
-    neutron = client.Client("2.0", session=AUTH)
-    return neutron
+    neutron = client.Client("2.0", **CREDENTIALS)
 
-def get_cinder_client():
+    for agent in neutron.list_agents():
+        print agent.__dict__
+
+def check_cinder_services():
     from cinderclient import client
-    cinder = client.Client('2', session=AUTH)
-    return cinder
+    cinder = client.Client('2', **CREDENTIALS)
 
 
-def get_client(args):
+def get_client():
     get_auth()
     clients = {
-        'nova': get_nova_client,
-        'cinder': get_cinder_client,
-        'neutron': get_neutron_client
+        'nova': check_nova_services,
+        'cinder': check_cinder_services,
+        'neutron': check_neutron_services
     }
-    client_obj = clients[args.service]
+    client_obj = clients[CONF.service]()
     return client_obj
 
 
 
 
 if __name__ == '__main__':
-    args = parse_args()
-    setup_logging(args)
+    parse_args()
+    setup_logging()
     
     try:
-        get_client(args)
+        get_client()
     except Exception as err:
         LOG.exception("Error: %s" % err)
-        sys.exit(1)
+        sys.exit(2)
     except KeyboardInterrupt:
-        sys.exit(1)
+        sys.exit(2)
 
