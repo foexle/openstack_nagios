@@ -113,7 +113,13 @@ def check_neutron_services():
 
 def check_cinder_services():
     from cinderclient import client
-    cinder = client.Client('2', **CREDENTIALS)
+    cinder = client.Client('2', CREDENTIALS['username'],
+                                CREDENTIALS['password'],
+                                CREDENTIALS['tenant_name'],
+                                CREDENTIALS['auth_url'])
+
+    services = cinder.services.list()
+    print services
 
 
 def get_client():
