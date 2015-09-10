@@ -44,6 +44,8 @@ def parse_args():
             cfg.BoolOpt('debug', default=False, help="Show debugging output")
             ]
     CONF.register_cli_opts(cli_ops)
+    CONF(sys.argv[1:])
+
 
 
 def setup_logging():
