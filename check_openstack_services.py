@@ -98,6 +98,7 @@ def check_nova_services():
         if service.state != "up" and service.status == "enabled":
             print "Server not runnning: {service} on host {host}".format(service=service.binary,host=service.host)
             sys.exit(2)
+    print "All Nova services running well"
 
     
 def check_neutron_services():
