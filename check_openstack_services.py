@@ -44,6 +44,8 @@ def parse_args():
             cfg.BoolOpt('debug', default=False, help="Show debugging output")
             ]
     CONF.register_cli_opts(cli_ops)
+    CONF(sys.argv[1:])
+
 
 
 def setup_logging():
@@ -98,18 +100,29 @@ def check_nova_services():
         if service.state != "up" and service.status == "enabled":
             print "Server not runnning: {service} on host {host}".format(service=service.binary,host=service.host)
             sys.exit(2)
+    print "All Nova services running well"
 
     
 def check_neutron_services():
     from neutronclient.neutron import client
     neutron = client.Client("2.0", **CREDENTIALS)
+    agents = neutron.list_agents()
+    for agent in agents['agents']:
+        if agent['alive'] != True:
+            print "Neutron Agent {agent} on host {host} not running".format(agent=agent['binary'],host=agent['host'])
+            sys.exit(2)
+    print "All Neutron Agents working well"
 
-    for agent in neutron.list_agents():
-        print agent.__dict__
 
 def check_cinder_services():
     from cinderclient import client
-    cinder = client.Client('2', **CREDENTIALS)
+    cinder = client.Client('2', CREDENTIALS['username'],
+                                CREDENTIALS['password'],
+                                CREDENTIALS['tenant_name'],
+                                CREDENTIALS['auth_url'])
+
+    services = cinder.services.list()
+    print services
 
 
 def get_client():
